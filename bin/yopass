@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+require 'json'
+require 'uri'
+require 'net/http'
+
+args = ARGV[0]
+if args == '-h' || args == '--help'
+  puts 'Usage:'
+  puts 'echo "hello world" | yopass'
+  puts 'yopass "Hello World"'
+  exit 0
+end
+
+if ENV['YOPASS_URL'].nil?
+  puts 'Error: make sure YOPASS_URL is set in your environment variables'
+  exit 1
+end
+
+secret = args if args
+begin
+  secret = ARGF.read
+rescue Errno::ENOENT
+end
+
+url = ENV['YOPASS_URL']
+uri = URI.parse(url)
+http = Net::HTTP.new(uri.host, uri.port)
+http.use_ssl = true if uri.scheme == 'https'
+request = Net::HTTP::Post.new('/v1/secret')
+request.add_field('Content-Type', 'application/json')
+request.body = JSON.dump({'secret' => secret})
+
+begin
+  response = http.request(request)
+rescue SocketError
+  puts "Failed to contact #{ENV['YOPASS_URL']}"
+  exit 1
+end
+
+begin
+  r = JSON.parse(response.body)
+rescue JSON::ParserError
+  puts "Failed to parse server response from #{ENV['YOPASS_URL']}. Something is broken!"
+  exit 1
+end
+
+if response.code != "200"
+  puts r['message']
+  exit 1
+end
+
+base_url = File.join(url, '#/s', r['key'])
+puts "Full URL: #{File.join(base_url, r['decryption_key'])}"
+puts "Short URL: #{base_url}"
+puts "Decryption Key: #{r['decryption_key']}"
